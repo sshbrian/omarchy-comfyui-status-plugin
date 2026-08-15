@@ -7,7 +7,7 @@ import "Model.js" as Model
 
 BarWidget {
   id: root
-  moduleName: "comfyui.status"
+  moduleName: "io.github.sshbrian.comfyui-status"
 
   readonly property string host: {
     var value = String(setting("host", "127.0.0.1")).replace(/^\s+|\s+$/g, "")

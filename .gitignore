@@ -1,2 +1,3 @@
 *.qmlc
 .DS_Store
+docs/fullscreen-*.png

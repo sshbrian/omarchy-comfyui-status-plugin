@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "comfyui.status",
+  "id": "io.github.sshbrian.comfyui-status",
   "name": "ComfyUI",
   "version": "1.0.0",
-  "author": "neo",
+  "author": "sshbrian",
   "license": "MIT",
   "description": "ComfyUI generation status: idle, sampler progress, and it/s.",
   "kinds": [
