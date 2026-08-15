@@ -20,8 +20,12 @@ BarWidget {
     if (n > 65535) n = 65535
     return n
   }
-  readonly property string promptUrl: "http://" + host + ":" + port + "/prompt"
-  readonly property string uiUrl: "http://" + host + ":" + port + "/"
+  readonly property string origin: "http://" + host + ":" + port
+  readonly property string promptUrl: origin + "/prompt"
+  readonly property string queueUrl: origin + "/queue"
+  readonly property string statsUrl: origin + "/system_stats"
+  readonly property string interruptUrl: origin + "/interrupt"
+  readonly property string uiUrl: origin + "/"
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")
   readonly property string statusPath: stateHome + "/omarchy/comfyui-status.json"
 
@@ -31,6 +35,12 @@ BarWidget {
   property int queueRemaining: 0
   property var rateState: ({})
   property double nowMs: Date.now()
+  property var httpVram: Model.emptyVram()
+  property int httpRunning: 0
+  property int httpPending: 0
+  property string _pingOutput: ""
+  property string _queueOutput: ""
+  property string _statsOutput: ""
 
   readonly property string kind: Model.classify({
     httpSeen: httpSeen,
@@ -48,15 +58,63 @@ BarWidget {
   readonly property color trackColor: Style.selectedFillFor(fg, Color.accent)
   readonly property color fillColor: Color.accent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property bool canInterrupt: kind === "sampling" || kind === "working"
+  readonly property var stepTimes: fileSnap && fileSnap.stepTimes ? fileSnap.stepTimes : []
+  readonly property var pills: Model.factPills(fileSnap && fileSnap.facts)
+  readonly property string heroTitle: Model.heroTitle(kind, fileSnap, rate)
+  readonly property string heroMeta: Model.heroMeta(kind, fileSnap, fileSnap ? fileSnap.session : null)
+  readonly property string heroDetail: Model.heroDetail(kind, rate, queueRemaining)
+  readonly property int displayRunning: (fileSnap && fileSnap.queueRunning) || httpRunning
+  readonly property int displayPending: (fileSnap && fileSnap.queuePending) || httpPending
+  readonly property string queueDetail: Model.formatQueue(displayRunning, displayPending, queueRemaining)
+  readonly property string lastJobText: Model.formatLastJob(fileSnap ? fileSnap.lastJob : null, nowMs / 1000)
+  readonly property string vramText: Model.formatVram(Model.pickVram(fileSnap, httpVram))
+  readonly property string sessionGensText: fileSnap && fileSnap.session ? String(fileSnap.session.gens) : "0"
+  readonly property string sessionFailText: fileSnap && fileSnap.session ? String(fileSnap.session.failures) : "0"
+  readonly property string sessionGpuText: {
+    var sec = fileSnap && fileSnap.session ? fileSnap.session.gpuSec : 0
+    return Model.formatDuration(sec) || "0s"
+  }
 
-  implicitWidth: visible ? row.implicitWidth + Style.space(14) : 0
-  implicitHeight: barSize
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+  readonly property real openPanelIndicatorWidth: row.implicitWidth
+
+  implicitWidth: visible ? button.implicitWidth : 0
+  implicitHeight: button.implicitHeight
 
   Behavior on implicitWidth {
     NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
   }
 
+  onBarChanged: injectPanel()
+  onSettingsChanged: injectPanel()
   onFileSnapChanged: root.noteProgress(fileSnap)
+
+  function injectPanel() {
+    var target = panelLoader.item
+    if (!target) return
+    if ("bar" in target) target.bar = root.bar
+    if ("settings" in target) target.settings = root.settings
+    if ("anchorItem" in target) target.anchorItem = button
+    if ("hostWidget" in target) target.hostWidget = root
+  }
+
+  function open() {
+    if (panelLoader.item && panelLoader.item.open) panelLoader.item.open()
+  }
+
+  function close() {
+    if (panelLoader.item && panelLoader.item.close) panelLoader.item.close()
+  }
+
+  function togglePanel() {
+    if (panelLoader.item && panelLoader.item.toggle) panelLoader.item.toggle()
+  }
+
+  function closeForPopoutSwitch() {
+    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
+  }
 
   function noteProgress(snap) {
     if (!snap || snap.lastEvent !== "progress") return
@@ -90,8 +148,41 @@ BarWidget {
     pingProc.running = true
   }
 
+  function pingExtras() {
+    if (queueProc.running === false) {
+      queueProc.command = ["curl", "-fsS", "--max-time", "1", root.queueUrl]
+      queueProc.running = true
+    }
+    if (statsProc.running === false) {
+      statsProc.command = ["curl", "-fsS", "--max-time", "1", root.statsUrl]
+      statsProc.running = true
+    }
+  }
+
   function openUi() {
     Qt.openUrlExternally(root.uiUrl)
+  }
+
+  function interrupt() {
+    if (!root.canInterrupt || interruptProc.running) return
+    interruptProc.command = [
+      "curl", "-fsS", "-X", "POST", "--max-time", "2",
+      "-H", "Content-Type: application/json",
+      "-d", "{}",
+      root.interruptUrl
+    ]
+    interruptProc.running = true
+  }
+
+  Loader {
+    id: panelLoader
+    active: true
+    source: Qt.resolvedUrl("Panel.qml")
+    visible: false
+    onLoaded: {
+      root.injectPanel()
+      Qt.callLater(root.injectPanel)
+    }
   }
 
   FileView {
@@ -119,10 +210,9 @@ BarWidget {
     onTriggered: {
       root.nowMs = Date.now()
       root.ping()
+      if (root.opened) root.pingExtras()
     }
   }
-
-  property string _pingOutput: ""
 
   Process {
     id: pingProc
@@ -138,72 +228,129 @@ BarWidget {
     }
   }
 
-  Row {
-    id: row
-    anchors.centerIn: parent
-    spacing: Style.space(6)
-
-    Text {
-      visible: root.kind !== "sampling" || root.vertical
-      anchors.verticalCenter: parent.verticalCenter
-      text: Model.labelFor(root.kind, root.rate, root.queueRemaining, root.vertical, root.fileSnap.value, root.fileSnap.max)
-      color: root.kind === "offline" ? root.dim : root.fg
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
+  Process {
+    id: queueProc
+    running: false
+    stdout: StdioCollector {
+      id: queueStdout
+      waitForEnd: true
+      onStreamFinished: root._queueOutput = text
     }
-
-    Item {
-      id: track
-      visible: root.kind === "sampling" && !root.vertical
-      width: Style.space(72)
-      height: Math.max(Style.space(4), Math.round(Style.spacing.controlHeight * 0.14))
-      anchors.verticalCenter: parent.verticalCenter
-
-      Rectangle {
-        anchors.fill: parent
-        radius: height / 2
-        color: root.trackColor
-      }
-
-      Rectangle {
-        anchors.left: parent.left
-        anchors.verticalCenter: parent.verticalCenter
-        height: parent.height
-        radius: parent.height / 2
-        width: parent.width * root.progress
-        color: root.fillColor
-
-        Behavior on width {
-          NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-        }
-      }
-    }
-
-    Text {
-      visible: root.kind === "sampling" && !root.vertical && root.rateText !== ""
-      anchors.verticalCenter: parent.verticalCenter
-      text: root.rateText
-      color: root.fg
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-    }
-
-    Text {
-      visible: root.queueText !== "" && root.kind !== "idle" && root.kind !== "offline"
-      anchors.verticalCenter: parent.verticalCenter
-      text: root.queueText
-      color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
+    onExited: function(exitCode) {
+      if (exitCode !== 0) return
+      var parsed = Model.parseQueueHttp(queueStdout.text || root._queueOutput)
+      if (!parsed.ok) return
+      root.httpRunning = parsed.running
+      root.httpPending = parsed.pending
     }
   }
 
-  MouseArea {
+  Process {
+    id: statsProc
+    running: false
+    stdout: StdioCollector {
+      id: statsStdout
+      waitForEnd: true
+      onStreamFinished: root._statsOutput = text
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) return
+      var parsed = Model.parseSystemStats(statsStdout.text || root._statsOutput)
+      if (parsed.ok) root.httpVram = parsed.vram
+    }
+  }
+
+  Process {
+    id: interruptProc
+    running: false
+  }
+
+  IpcHandler {
+    target: root.moduleName
+
+    function open(): void { root.open() }
+    function close(): void { root.close() }
+    function show(): void { root.open() }
+    function hide(): void { root.close() }
+    function toggle(): void { root.togglePanel() }
+    function interrupt(): void { root.interrupt() }
+  }
+
+  WidgetButton {
+    id: button
     anchors.fill: parent
-    hoverEnabled: true
-    cursorShape: Qt.PointingHandCursor
-    onClicked: root.openUi()
-    onEntered: if (root.bar) root.bar.showTooltip(root, Model.tooltipFor(root.kind, root.fileSnap, root.rate, root.queueRemaining, root.host, root.port))
-    onExited: if (root.bar) root.bar.hideTooltip(root)
+    bar: root.bar
+    text: ""
+    labelVisible: false
+    hasVisualContent: true
+    tooltipText: root.opened ? "" : Model.tooltipFor(root.kind, root.fileSnap, root.rate, root.queueRemaining, root.host, root.port)
+    fixedWidth: root.vertical ? -1 : Math.max(Style.space(48), row.implicitWidth + Style.space(14))
+    fixedHeight: root.vertical ? Math.max(root.barSize, row.implicitHeight + Style.space(8)) : -1
+
+    onPressed: function(b) {
+      if (b === Qt.RightButton) root.openUi()
+      else if (b === Qt.MiddleButton) root.interrupt()
+      else root.togglePanel()
+    }
+
+    Row {
+      id: row
+      anchors.centerIn: parent
+      spacing: Style.space(6)
+
+      Text {
+        visible: root.kind !== "sampling" || root.vertical
+        anchors.verticalCenter: parent.verticalCenter
+        text: Model.labelFor(root.kind, root.rate, root.queueRemaining, root.vertical, root.fileSnap.value, root.fileSnap.max)
+        color: root.kind === "offline" ? root.dim : root.fg
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+      }
+
+      Item {
+        id: track
+        visible: root.kind === "sampling" && !root.vertical
+        width: Style.space(72)
+        height: Math.max(Style.space(4), Math.round(Style.spacing.controlHeight * 0.14))
+        anchors.verticalCenter: parent.verticalCenter
+
+        Rectangle {
+          anchors.fill: parent
+          radius: height / 2
+          color: root.trackColor
+        }
+
+        Rectangle {
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          height: parent.height
+          radius: parent.height / 2
+          width: parent.width * root.progress
+          color: root.fillColor
+
+          Behavior on width {
+            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+          }
+        }
+      }
+
+      Text {
+        visible: root.kind === "sampling" && !root.vertical && root.rateText !== ""
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.rateText
+        color: root.fg
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+      }
+
+      Text {
+        visible: root.queueText !== "" && root.kind !== "idle" && root.kind !== "offline"
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.queueText
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+      }
+    }
   }
 }
