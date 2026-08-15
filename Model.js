@@ -114,8 +114,12 @@ function nextRate(prev, tick) {
 function formatRate(rate) {
   var n = Number(rate)
   if (!isFinite(n) || n <= 0) return ""
+  // Match Comfy/tqdm: it/s when a step is under a second, s/it otherwise.
+  if (n < 1) {
+    var sec = 1 / n
+    return (sec >= 10 ? sec.toFixed(1) : sec.toFixed(2)) + "s/it"
+  }
   if (n >= 10) return n.toFixed(1) + " it/s"
-  if (n < 1) return n.toFixed(2) + " it/s"
   return n.toFixed(1) + " it/s"
 }
 

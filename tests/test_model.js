@@ -35,6 +35,14 @@ test("classify prefers HTTP idle and offline", () => {
   assert.equal(Model.classify({ httpSeen: false, httpOk: false, queueRemaining: 0, file: Model.emptySnapshot() }), "idle")
 })
 
+test("formatRate matches Comfy it/s vs s/it", () => {
+  assert.equal(Model.formatRate(0), "")
+  assert.equal(Model.formatRate(8.27), "8.3 it/s")
+  assert.equal(Model.formatRate(15.4), "15.4 it/s")
+  assert.equal(Model.formatRate(0.04), "25.0s/it")
+  assert.equal(Model.formatRate(0.4), "2.50s/it")
+})
+
 test("nextRate EMA and reset on new sampler", () => {
   const a = Model.nextRate(null, { value: 1, max: 20, promptId: "p", node: "3", t: 1000 })
   assert.equal(a.rate, 0)
