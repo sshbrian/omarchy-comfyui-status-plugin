@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "comfyui.status",
+  "name": "ComfyUI",
+  "version": "1.0.0",
+  "author": "neo",
+  "license": "MIT",
+  "description": "ComfyUI generation status: idle, sampler progress, and it/s.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "ComfyUI",
+    "description": "Idle, sampler progress bar, and it/s from a local ComfyUI server.",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "host": "127.0.0.1",
+      "port": 8188
+    },
+    "schema": [
+      {
+        "key": "host",
+        "type": "string",
+        "label": "Host",
+        "defaultValue": "127.0.0.1"
+      },
+      {
+        "key": "port",
+        "type": "integer",
+        "label": "Port",
+        "min": 1,
+        "max": 65535,
+        "step": 1,
+        "defaultValue": 8188
+      }
+    ]
+  }
+}
