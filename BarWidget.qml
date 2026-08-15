@@ -30,12 +30,14 @@ BarWidget {
   property bool httpOk: false
   property int queueRemaining: 0
   property var rateState: ({})
+  property double nowMs: Date.now()
 
   readonly property string kind: Model.classify({
     httpSeen: httpSeen,
     httpOk: httpOk,
     queueRemaining: queueRemaining,
-    file: fileSnap
+    file: fileSnap,
+    now: nowMs / 1000
   })
   readonly property real progress: fileSnap && fileSnap.max > 0 ? Math.max(0, Math.min(1, fileSnap.value / fileSnap.max)) : 0
   readonly property real rate: rateState && isFinite(Number(rateState.rate)) ? Number(rateState.rate) : 0
@@ -114,7 +116,10 @@ BarWidget {
     running: true
     repeat: true
     triggeredOnStart: true
-    onTriggered: root.ping()
+    onTriggered: {
+      root.nowMs = Date.now()
+      root.ping()
+    }
   }
 
   property string _pingOutput: ""
@@ -141,11 +146,7 @@ BarWidget {
     Text {
       visible: root.kind !== "sampling" || root.vertical
       anchors.verticalCenter: parent.verticalCenter
-      text: {
-        if (root.kind === "sampling" && root.vertical)
-          return root.rateText || Model.formatPercent(root.fileSnap.value, root.fileSnap.max) || "…"
-        return Model.labelFor(root.kind, root.rate, root.queueRemaining, root.vertical)
-      }
+      text: Model.labelFor(root.kind, root.rate, root.queueRemaining, root.vertical, root.fileSnap.value, root.fileSnap.max)
       color: root.kind === "offline" ? root.dim : root.fg
       font.family: root.fontFamily
       font.pixelSize: Style.font.body

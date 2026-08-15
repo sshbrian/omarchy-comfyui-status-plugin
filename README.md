@@ -56,7 +56,7 @@ Left-click opens `http://<host>:<port>/`.
 omarchy plugin remove io.github.sshbrian.comfyui-status
 ```
 
-The companion node is a separate checkout under `ComfyUI/custom_nodes/`; remove that folder if you no longer want the status file.
+The companion node is a separate checkout under `ComfyUI/custom_nodes/`. Remove that folder and delete `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/comfyui-status.json` if you no longer want the snapshot. The bar ignores a snapshot older than 90 seconds and falls back to Offline / Idle / Working… from `GET /prompt`.
 
 ## Tests
 

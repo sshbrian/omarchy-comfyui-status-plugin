@@ -22,17 +22,43 @@ test("parseStatusFile maps snake_case and ignores junk", () => {
 })
 
 test("classify prefers HTTP idle and offline", () => {
+  const now = 1000
   const sampling = {
     state: "running",
     lastEvent: "progress",
     max: 20,
-    value: 4
+    value: 4,
+    updatedAt: now
   }
-  assert.equal(Model.classify({ httpSeen: true, httpOk: false, queueRemaining: 1, file: sampling }), "offline")
-  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 0, file: sampling }), "idle")
-  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: sampling }), "sampling")
-  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: { lastEvent: "executing", max: 0 } }), "working")
+  assert.equal(Model.classify({ httpSeen: true, httpOk: false, queueRemaining: 1, file: sampling, now: now }), "offline")
+  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 0, file: sampling, now: now }), "idle")
+  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: sampling, now: now }), "sampling")
+  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: { lastEvent: "executing", max: 0, updatedAt: now }, now: now }), "working")
   assert.equal(Model.classify({ httpSeen: false, httpOk: false, queueRemaining: 0, file: Model.emptySnapshot() }), "idle")
+})
+
+test("classify ignores a stale leftover status file", () => {
+  const now = 1000
+  const leftover = {
+    state: "running",
+    lastEvent: "progress",
+    max: 20,
+    value: 8,
+    updatedAt: now
+  }
+  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: leftover, now: now }), "sampling")
+  assert.equal(Model.classify({
+    httpSeen: true, httpOk: true, queueRemaining: 1, file: leftover, now: now + Model.FILE_MAX_AGE_SEC + 1
+  }), "working")
+  assert.equal(Model.classify({
+    httpSeen: true, httpOk: true, queueRemaining: 1,
+    file: { lastEvent: "progress", max: 20, value: 8, updatedAt: 0 }, now: now
+  }), "working")
+})
+
+test("labelFor vertical sampling uses real percent", () => {
+  assert.equal(Model.labelFor("sampling", 0, 1, true, 5, 20), "25%")
+  assert.equal(Model.labelFor("sampling", 8.3, 1, true, 5, 20), "8.3 it/s")
 })
 
 test("formatRate matches Comfy it/s vs s/it", () => {

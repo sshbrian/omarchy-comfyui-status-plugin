@@ -52,9 +52,21 @@ function parsePromptHttp(raw) {
   }
 }
 
+// Slow MiniMax-style samplers tick about once per 25s; expire after a few missed steps.
+var FILE_MAX_AGE_SEC = 90
+
+function fileIsFresh(file, now, maxAgeSec) {
+  var updated = asNumber(file && file.updatedAt, 0)
+  if (!(updated > 0)) return false
+  var age = asNumber(now, 0) - updated
+  var limit = asNumber(maxAgeSec, FILE_MAX_AGE_SEC)
+  return isFinite(age) && age >= 0 && age <= limit
+}
+
 // httpSeen: first /prompt poll has finished.
 // httpOk / queueRemaining: from that poll.
 // file: parseStatusFile() result.
+// now: unix seconds; file progress older than maxAgeSec is ignored.
 function classify(input) {
   var src = input || {}
   if (src.httpSeen && src.httpOk !== true) return "offline"
@@ -65,7 +77,10 @@ function classify(input) {
   var file = src.file || emptySnapshot()
   if (!src.httpSeen && file.state !== "running") return "idle"
 
-  if (file.lastEvent === "progress" && asNumber(file.max, 0) > 0) return "sampling"
+  var now = asNumber(src.now, 0)
+  if (!(now > 0)) now = Date.now() / 1000
+  var fresh = fileIsFresh(file, now, src.maxAgeSec)
+  if (fresh && file.lastEvent === "progress" && asNumber(file.max, 0) > 0) return "sampling"
   return "working"
 }
 
@@ -114,12 +129,10 @@ function nextRate(prev, tick) {
 function formatRate(rate) {
   var n = Number(rate)
   if (!isFinite(n) || n <= 0) return ""
-  // Match Comfy/tqdm: it/s when a step is under a second, s/it otherwise.
   if (n < 1) {
     var sec = 1 / n
     return (sec >= 10 ? sec.toFixed(1) : sec.toFixed(2)) + "s/it"
   }
-  if (n >= 10) return n.toFixed(1) + " it/s"
   return n.toFixed(1) + " it/s"
 }
 
@@ -130,12 +143,12 @@ function formatPercent(value, max) {
   return pct + "%"
 }
 
-function labelFor(kind, rate, queueRemaining, vertical) {
+function labelFor(kind, rate, queueRemaining, vertical, value, max) {
   if (kind === "offline") return "Offline"
   if (kind === "idle") return "Idle"
   if (kind === "working") return vertical ? "…" : "Working…"
   var rateText = formatRate(rate)
-  if (vertical) return rateText || formatPercent(0, 1) || "…"
+  if (vertical) return rateText || formatPercent(value, max) || "…"
   return rateText
 }
 
@@ -159,6 +172,8 @@ if (typeof module !== "undefined") {
     emptySnapshot: emptySnapshot,
     parseStatusFile: parseStatusFile,
     parsePromptHttp: parsePromptHttp,
+    fileIsFresh: fileIsFresh,
+    FILE_MAX_AGE_SEC: FILE_MAX_AGE_SEC,
     classify: classify,
     nextRate: nextRate,
     formatRate: formatRate,

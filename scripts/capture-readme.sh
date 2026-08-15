@@ -11,23 +11,27 @@ SHELL_JSON="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/shell.json"
 MOCK_PORT=18188
 MOCK_PID=""
 WAIT_SECS="${WAIT_SECS:-2.6}"
+RETURN_WS="$(hyprctl activeworkspace -j 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",2))' 2>/dev/null || echo 2)"
 
 mkdir -p "$DOCS"
 mkdir -p "$(dirname "$STATUS")"
+
+# Approved README crop: weather + clock + status, bar height only.
+CROP_LEFT=1692
+CROP_WIDTH=1092
+CROP_HEIGHT=52
 
 bar_geometry() {
   python3 - <<'PY'
 import json, subprocess
 mons = json.loads(subprocess.check_output(["hyprctl", "monitors", "-j"], text=True))
 mon = next((m for m in mons if m.get("focused")), mons[0])
-x, y = int(mon["x"]), int(mon["y"])
-width = int(mon["width"])
-scale = float(mon.get("scale") or 1)
-# Logical height of just the Omarchy bar. grim on this machine
-# emits 2x the requested rectangle, so 35 becomes a ~70px strip.
-height = max(32, int(round(35)))
-print(f"{x},{y} {width}x{height}")
+print("%d,%d %dx35" % (int(mon["x"]), int(mon["y"]), int(mon["width"])))
 PY
+}
+
+crop_bar() {
+  magick "$1" -crop "${CROP_WIDTH}x${CROP_HEIGHT}+${CROP_LEFT}+0" +repage "$1"
 }
 
 write_status() {
@@ -115,6 +119,7 @@ restore() {
   stop_mock
   set_widget_port default || true
   write_status idle || true
+  hyprctl eval "hl.dispatch(hl.dsp.focus({ workspace = \"${RETURN_WS}\" }))" >/dev/null || true
 }
 
 trap restore EXIT
@@ -127,25 +132,35 @@ set_widget_port default
 write_status idle
 sleep "$WAIT_SECS"
 grim -g "$geom" "$DOCS/idle.png"
+crop_bar "$DOCS/idle.png"
 echo "wrote $DOCS/idle.png"
 
 start_mock
 set_widget_port "$MOCK_PORT"
 
-write_status sampling 7
-sleep "$WAIT_SECS"
-write_status sampling 12
-sleep "$WAIT_SECS"
+write_status sampling 1
+sleep 3
+write_status sampling 2
+sleep 3
 grim -g "$geom" "$DOCS/sampling.png"
-cp "$DOCS/sampling.png" "$REPO/preview.png"
-echo "wrote $DOCS/sampling.png and preview.png"
+crop_bar "$DOCS/sampling.png"
+echo "wrote $DOCS/sampling.png"
+
+# Marketplace card: full desktop so the bar is not a 34px sliver.
+hyprctl eval 'hl.dispatch(hl.dsp.focus({ workspace = "5" }))' >/dev/null || true
+sleep 0.6
+grim -o HDMI-A-1 "$REPO/preview.png"
+echo "wrote $REPO/preview.png"
+hyprctl eval "hl.dispatch(hl.dsp.focus({ workspace = \"${RETURN_WS}\" }))" >/dev/null || true
 
 write_status working
 sleep "$WAIT_SECS"
 grim -g "$geom" "$DOCS/working.png"
+crop_bar "$DOCS/working.png"
 echo "wrote $DOCS/working.png"
 
 stop_mock
 sleep "$WAIT_SECS"
 grim -g "$geom" "$DOCS/offline.png"
+crop_bar "$DOCS/offline.png"
 echo "wrote $DOCS/offline.png"
