@@ -1,4 +1,4 @@
-# omarchy-comfyui
+# omarchy-comfyui-status-plugin
 
 Omarchy bar widget for [ComfyUI](https://github.com/Comfy-Org/ComfyUI). Shows **Idle** when the queue is empty, a sampler progress bar and **it/s** while generating, and **Offline** if the server is down.
 
