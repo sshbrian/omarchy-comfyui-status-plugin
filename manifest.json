@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.sshbrian.comfyui-status",
   "name": "ComfyUI",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": "sshbrian",
   "license": "MIT",
   "description": "ComfyUI generation status: idle, sampler progress, it/s, and a click-to-open dashboard.",

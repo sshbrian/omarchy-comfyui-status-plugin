@@ -31,9 +31,10 @@ test("classify prefers HTTP idle and offline", () => {
     updatedAt: now
   }
   assert.equal(Model.classify({ httpSeen: true, httpOk: false, queueRemaining: 1, file: sampling, now: now }), "offline")
-  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 0, file: sampling, now: now }), "idle")
+  // Fresh companion snapshot beats a stale /prompt poll (queue still 0).
+  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 0, file: sampling, now: now }), "sampling")
   assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: sampling, now: now }), "sampling")
-  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: { lastEvent: "executing", max: 0, updatedAt: now }, now: now }), "working")
+  assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: { state: "running", lastEvent: "executing", max: 0, updatedAt: now }, now: now }), "working")
   assert.equal(Model.classify({ httpSeen: false, httpOk: false, queueRemaining: 0, file: Model.emptySnapshot() }), "idle")
 })
 
@@ -48,12 +49,74 @@ test("classify ignores a stale leftover status file", () => {
   }
   assert.equal(Model.classify({ httpSeen: true, httpOk: true, queueRemaining: 1, file: leftover, now: now }), "sampling")
   assert.equal(Model.classify({
-    httpSeen: true, httpOk: true, queueRemaining: 1, file: leftover, now: now + Model.FILE_MAX_AGE_SEC + 1
+    httpSeen: true, httpOk: true, queueRemaining: 1, file: leftover,
+    now: now + Model.HTTP_BUSY_PROGRESS_AGE_SEC + 1
   }), "working")
   assert.equal(Model.classify({
     httpSeen: true, httpOk: true, queueRemaining: 1,
     file: { lastEvent: "progress", max: 20, value: 8, updatedAt: 0 }, now: now
   }), "working")
+  // Companion already wrote idle; don't flash Working from a stale queue=1 poll.
+  assert.equal(Model.classify({
+    httpSeen: true, httpOk: true, queueRemaining: 2,
+    file: { state: "idle", lastEvent: "status", max: 0, updatedAt: now }, now: now
+  }), "idle")
+})
+
+test("classify keeps sampling across a slow MiniMax step", () => {
+  const now = 1000
+  const slow = {
+    state: "running",
+    lastEvent: "progress",
+    phase: "sampling",
+    max: 20,
+    value: 6,
+    stepTimes: [38, 40, 37],
+    updatedAt: now
+  }
+  assert.equal(Model.classify({
+    httpSeen: true, httpOk: true, queueRemaining: 1, file: slow, now: now + 100
+  }), "sampling")
+  assert.equal(Model.classify({
+    httpSeen: true, httpOk: true, queueRemaining: 1,
+    file: { state: "running", lastEvent: "executing", phase: "sampling", max: 20, value: 6, updatedAt: now },
+    now: now
+  }), "sampling")
+})
+
+test("fast-gen classify+hold does not flicker working/sampling", () => {
+  const last = { at: 0 }
+  const kinds = []
+  function tick(t, file, queue) {
+    const raw = Model.classify({
+      httpSeen: true, httpOk: true, queueRemaining: queue, file, now: t
+    })
+    if (raw === "sampling") last.at = t
+    kinds.push(Model.holdKind(raw, last.at, t))
+  }
+  tick(0.00, { state: "running", lastEvent: "executing", max: 0, updatedAt: 0.00 }, 1)
+  tick(0.10, { state: "running", lastEvent: "progress", max: 4, value: 1, updatedAt: 0.10 }, 1)
+  tick(0.18, { state: "running", lastEvent: "progress", max: 4, value: 2, updatedAt: 0.18 }, 1)
+  tick(0.26, { state: "running", lastEvent: "progress", max: 4, value: 4, updatedAt: 0.26 }, 1)
+  tick(0.28, { state: "running", lastEvent: "executing", phase: "decoding", max: 4, value: 4, updatedAt: 0.28 }, 1)
+  tick(0.50, { state: "running", lastEvent: "execution_success", max: 0, updatedAt: 0.50 }, 1)
+  tick(0.52, { state: "idle", lastEvent: "status", max: 0, updatedAt: 0.52 }, 1)
+  tick(1.00, { state: "running", lastEvent: "progress", max: 4, value: 1, updatedAt: 1.00 }, 0)
+  const live = kinds.filter((k) => k === "sampling" || k === "working")
+  let flips = 0
+  for (let i = 1; i < live.length; i++) if (live[i] !== live[i - 1]) flips++
+  assert.deepEqual(kinds.slice(0, 6), ["working", "sampling", "sampling", "sampling", "sampling", "sampling"])
+  assert.equal(kinds[6], "idle")
+  assert.equal(kinds[7], "sampling")
+  assert.ok(flips <= 1)
+})
+
+test("holdKind glues brief working gaps after sampling", () => {
+  assert.equal(Model.holdKind("idle", 10, 10.2), "idle")
+  assert.equal(Model.holdKind("offline", 10, 10.2), "offline")
+  assert.equal(Model.holdKind("sampling", 10, 10.2), "sampling")
+  assert.equal(Model.holdKind("working", 10, 10.2), "sampling")
+  assert.equal(Model.holdKind("working", 10, 10 + Model.SAMPLE_HOLD_SEC + 0.05), "working")
 })
 
 test("labelFor vertical sampling uses real percent", () => {

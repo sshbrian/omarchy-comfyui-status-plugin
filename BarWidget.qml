@@ -35,6 +35,7 @@ BarWidget {
   property int queueRemaining: 0
   property var rateState: ({})
   property double nowMs: Date.now()
+  property double lastSamplingAt: 0
   property var httpVram: Model.emptyVram()
   property int httpRunning: 0
   property int httpPending: 0
@@ -42,13 +43,14 @@ BarWidget {
   property string _queueOutput: ""
   property string _statsOutput: ""
 
-  readonly property string kind: Model.classify({
+  readonly property string rawKind: Model.classify({
     httpSeen: httpSeen,
     httpOk: httpOk,
     queueRemaining: queueRemaining,
     file: fileSnap,
     now: nowMs / 1000
   })
+  readonly property string kind: Model.holdKind(rawKind, lastSamplingAt, nowMs / 1000)
   readonly property real progress: liveJob && fileSnap && fileSnap.max > 0 ? Math.max(0, Math.min(1, fileSnap.value / fileSnap.max)) : 0
   readonly property real rate: rateState && isFinite(Number(rateState.rate)) ? Number(rateState.rate) : 0
   readonly property string rateText: Model.formatRate(rate)
@@ -92,6 +94,7 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
   onFileSnapChanged: root.noteProgress(fileSnap)
+  onRawKindChanged: if (root.rawKind === "sampling") root.lastSamplingAt = Date.now() / 1000
   onKindChanged: {
     if (root.kind !== "idle" && root.kind !== "offline") return
     root.httpRunning = 0
@@ -136,7 +139,8 @@ BarWidget {
   }
 
   function applyFile(raw) {
-    fileSnap = Model.parseStatusFile(raw)
+    nowMs = Date.now()
+    fileSnap = Model.parseStatusFile(raw, nowMs / 1000)
   }
 
   function applyHttp(raw, ok) {
