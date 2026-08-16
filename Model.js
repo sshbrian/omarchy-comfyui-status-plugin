@@ -85,10 +85,29 @@ function parseVram(raw) {
   }
 }
 
-function parseSession(raw) {
+function pad2(n) {
+  return n < 10 ? "0" + n : String(n)
+}
+
+function todayStr(now) {
+  var d
+  if (now == null || now === undefined || now === "") d = new Date()
+  else {
+    var sec = asNumber(now, NaN)
+    d = isFinite(sec) && sec > 1e11 ? new Date(sec) : new Date(sec * 1000)
+    if (isNaN(d.getTime())) d = new Date()
+  }
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate())
+}
+
+function parseSession(raw, now) {
   var src = raw && typeof raw === "object" ? raw : {}
+  var today = todayStr(now)
+  if (asText(src.day) !== today) {
+    return { day: today, gens: 0, failures: 0, interrupts: 0, gpuSec: 0 }
+  }
   return {
-    day: asText(src.day),
+    day: today,
     gens: Math.max(0, asInt(src.gens, 0)),
     failures: Math.max(0, asInt(src.failures, 0)),
     interrupts: Math.max(0, asInt(src.interrupts, 0)),
@@ -120,7 +139,7 @@ function parseStepTimes(raw) {
   return out
 }
 
-function parseStatusFile(raw) {
+function parseStatusFile(raw, now) {
   try {
     var data = JSON.parse(String(raw || ""))
     if (!data || typeof data !== "object") return emptySnapshot()
@@ -143,7 +162,7 @@ function parseStatusFile(raw) {
       facts: parseFacts(data.facts),
       lastJob: parseLastJob(data.last_job),
       vram: parseVram(data.vram),
-      session: parseSession(data.session)
+      session: parseSession(data.session, now)
     }
   } catch (e) {
     return emptySnapshot()
@@ -392,6 +411,7 @@ function phaseLabel(phase, kind) {
   if (key === "saving") return "Saving"
   if (key === "error") return "Failed"
   if (key === "interrupted") return "Stopped"
+  if (kind === "working") return "Working"
   if (kind === "idle" || key === "idle") return "Idle"
   return "Working"
 }
@@ -428,7 +448,7 @@ function heroTitle(kind, file, rate) {
     if (rateText) return rateText
     return "Sampling"
   }
-  return phaseLabel(file && file.phase, kind)
+  return phaseLabel(resolvedPhase(kind, file), kind)
 }
 
 function heroMeta(kind, file, session) {
@@ -469,6 +489,19 @@ function pickVram(file, httpVram) {
   return emptyVram()
 }
 
+function pickQueue(file, httpRunning, httpPending, now) {
+  if (file && asNumber(file.schema, 0) >= 2 && fileIsFresh(file, now)) {
+    return {
+      running: asNumber(file.queueRunning, 0),
+      pending: asNumber(file.queuePending, 0)
+    }
+  }
+  return {
+    running: asNumber(httpRunning, 0),
+    pending: asNumber(httpPending, 0)
+  }
+}
+
 function labelFor(kind, rate, queueRemaining, vertical, value, max) {
   if (kind === "offline") return "Offline"
   if (kind === "idle") return "Idle"
@@ -490,7 +523,7 @@ function tooltipFor(kind, file, rate, queueRemaining, host, port) {
   var eta = kind === "sampling" ? formatEta(etaSeconds(file, rate)) : ""
   if (eta) parts.push(eta)
   if (queueRemaining > 1) parts.push("queue " + queueRemaining)
-  if (kind === "working") parts.push(phaseLabel(file && file.phase, kind).toLowerCase())
+  if (kind === "working") parts.push(phaseLabel(resolvedPhase(kind, file), kind).toLowerCase())
   parts.push(where)
   return parts.join(" · ")
 }
@@ -501,6 +534,8 @@ if (typeof module !== "undefined") {
     emptyFacts: emptyFacts,
     emptyVram: emptyVram,
     emptySession: emptySession,
+    todayStr: todayStr,
+    parseSession: parseSession,
     parseStatusFile: parseStatusFile,
     parsePromptHttp: parsePromptHttp,
     parseQueueHttp: parseQueueHttp,
@@ -526,6 +561,8 @@ if (typeof module !== "undefined") {
     heroDetail: heroDetail,
     factPills: factPills,
     pickVram: pickVram,
+    pickQueue: pickQueue,
+    resolvedPhase: resolvedPhase,
     etaSeconds: etaSeconds,
     medianOf: medianOf,
     labelFor: labelFor,

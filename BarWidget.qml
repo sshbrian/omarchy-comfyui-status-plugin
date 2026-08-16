@@ -64,8 +64,9 @@ BarWidget {
   readonly property string heroTitle: Model.heroTitle(kind, fileSnap, rate)
   readonly property string heroMeta: Model.heroMeta(kind, fileSnap, fileSnap ? fileSnap.session : null)
   readonly property string heroDetail: Model.heroDetail(kind, rate, queueRemaining)
-  readonly property int displayRunning: (fileSnap && fileSnap.queueRunning) || httpRunning
-  readonly property int displayPending: (fileSnap && fileSnap.queuePending) || httpPending
+  readonly property var displayQueue: Model.pickQueue(fileSnap, httpRunning, httpPending, nowMs / 1000)
+  readonly property int displayRunning: displayQueue.running
+  readonly property int displayPending: displayQueue.pending
   readonly property string queueDetail: Model.formatQueue(displayRunning, displayPending, queueRemaining)
   readonly property string lastJobText: Model.formatLastJob(fileSnap ? fileSnap.lastJob : null, nowMs / 1000)
   readonly property string vramText: Model.formatVram(Model.pickVram(fileSnap, httpVram))
@@ -90,6 +91,12 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
   onFileSnapChanged: root.noteProgress(fileSnap)
+  onKindChanged: {
+    if (root.kind !== "idle" && root.kind !== "offline") return
+    root.httpRunning = 0
+    root.httpPending = 0
+    if (root.kind === "offline") root.httpVram = Model.emptyVram()
+  }
 
   function injectPanel() {
     var target = panelLoader.item
@@ -237,9 +244,17 @@ BarWidget {
       onStreamFinished: root._queueOutput = text
     }
     onExited: function(exitCode) {
-      if (exitCode !== 0) return
+      if (exitCode !== 0) {
+        root.httpRunning = 0
+        root.httpPending = 0
+        return
+      }
       var parsed = Model.parseQueueHttp(queueStdout.text || root._queueOutput)
-      if (!parsed.ok) return
+      if (!parsed.ok) {
+        root.httpRunning = 0
+        root.httpPending = 0
+        return
+      }
       root.httpRunning = parsed.running
       root.httpPending = parsed.pending
     }
@@ -254,9 +269,13 @@ BarWidget {
       onStreamFinished: root._statsOutput = text
     }
     onExited: function(exitCode) {
-      if (exitCode !== 0) return
+      if (exitCode !== 0) {
+        root.httpVram = Model.emptyVram()
+        return
+      }
       var parsed = Model.parseSystemStats(statsStdout.text || root._statsOutput)
       if (parsed.ok) root.httpVram = parsed.vram
+      else root.httpVram = Model.emptyVram()
     }
   }
 

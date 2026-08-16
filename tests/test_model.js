@@ -100,7 +100,7 @@ test("parseStatusFile maps schema 2 fields and stays compatible with schema 1", 
     facts: { checkpoint: "flux1-dev.safetensors", width: 1024, height: 1024, seed: 7, steps: 20, sampler: "euler" },
     last_job: { prompt_id: "prev", status: "ok", duration_sec: 48, ended_at: 10 },
     vram: { name: "cuda", used: 18e9, total: 24e9 },
-    session: { day: "2026-08-15", gens: 3, failures: 1, interrupts: 0, gpu_sec: 120 }
+    session: { day: Model.todayStr(), gens: 3, failures: 1, interrupts: 0, gpu_sec: 120 }
   }))
   assert.equal(v2.phase, "sampling")
   assert.equal(v2.nodeType, "KSampler")
@@ -156,6 +156,10 @@ test("hero and fact helpers", () => {
   assert.equal(Model.heroTitle("sampling", file, 0), "48s left")
   assert.equal(Model.heroTitle("idle", file, 0), "Idle")
   assert.equal(Model.heroTitle("offline", file, 0), "Offline")
+  assert.equal(Model.heroTitle("working", { phase: "idle" }, 0), "Working")
+  assert.equal(Model.heroTitle("working", { phase: "decoding" }, 0), "Decoding")
+  assert.equal(Model.resolvedPhase("working", { phase: "idle" }), "working")
+  assert.match(Model.tooltipFor("working", { phase: "idle" }, 0, 1, "127.0.0.1", 8188), /working/)
   assert.equal(Model.heroMeta("sampling", file, null), "Base sampler · 4/20")
   assert.equal(Model.heroMeta("idle", file, file.session), "12 gens today")
   assert.equal(Model.heroDetail("sampling", 0.333, 1), "3.00s/it")
@@ -188,4 +192,38 @@ test("parse extra HTTP payloads", () => {
   assert.equal(stats.ok, true)
   assert.equal(stats.vram.used, 18000)
   assert.equal(stats.vram.total, 24000)
+})
+
+test("parseSession zeros leftover totals from another day", () => {
+  const now = 1_700_000_000
+  const today = Model.todayStr(now)
+  const stale = Model.parseSession({
+    day: "1999-01-01",
+    gens: 9,
+    failures: 1,
+    interrupts: 2,
+    gpu_sec: 12
+  }, now)
+  assert.equal(stale.gens, 0)
+  assert.equal(stale.failures, 0)
+  assert.equal(stale.interrupts, 0)
+  assert.equal(stale.gpuSec, 0)
+  assert.equal(stale.day, today)
+
+  const fresh = Model.parseStatusFile(JSON.stringify({
+    schema: 2,
+    session: { day: today, gens: 4, failures: 0, interrupts: 0, gpu_sec: 30 }
+  }), now)
+  assert.equal(fresh.session.gens, 4)
+  assert.equal(fresh.session.gpuSec, 30)
+})
+
+test("pickQueue prefers fresh schema 2 zeros over stale HTTP", () => {
+  const now = 1000
+  const fresh = { schema: 2, updatedAt: now, queueRunning: 0, queuePending: 0 }
+  assert.deepEqual(Model.pickQueue(fresh, 1, 2, now), { running: 0, pending: 0 })
+  const stale = { schema: 2, updatedAt: now - Model.FILE_MAX_AGE_SEC - 1, queueRunning: 0, queuePending: 0 }
+  assert.deepEqual(Model.pickQueue(stale, 1, 2, now), { running: 1, pending: 2 })
+  const v1 = { schema: 1, updatedAt: now, queueRunning: 0, queuePending: 0 }
+  assert.deepEqual(Model.pickQueue(v1, 1, 2, now), { running: 1, pending: 2 })
 })
