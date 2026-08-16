@@ -495,7 +495,7 @@ function pickVram(file, httpVram, now, kind) {
 }
 
 function pickQueue(file, httpRunning, httpPending, now, kind) {
-  if (kind === "offline") return { running: 0, pending: 0 }
+  if (kind === "offline" || kind === "idle") return { running: 0, pending: 0 }
   var freshV2 = file && asNumber(file.schema, 0) >= 2 && fileIsFresh(file, now)
   if (freshV2 && (file.state === "idle" || asNumber(file.queueRemaining, 0) <= 0)) {
     return { running: 0, pending: 0 }

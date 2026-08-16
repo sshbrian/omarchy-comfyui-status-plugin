@@ -239,6 +239,7 @@ test("pickQueue prefers fresh schema 2 zeros over stale HTTP", () => {
   }
   assert.deepEqual(Model.pickQueue(busy, 0, 0, now), { running: 1, pending: 0 })
   assert.deepEqual(Model.pickQueue(busy, 1, 2, now, "offline"), { running: 0, pending: 0 })
+  assert.deepEqual(Model.pickQueue(busy, 0, 0, now, "idle"), { running: 0, pending: 0 })
 })
 
 test("pickVram ignores a stale snapshot", () => {
