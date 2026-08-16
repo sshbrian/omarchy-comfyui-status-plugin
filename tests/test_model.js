@@ -226,4 +226,23 @@ test("pickQueue prefers fresh schema 2 zeros over stale HTTP", () => {
   assert.deepEqual(Model.pickQueue(stale, 1, 2, now), { running: 1, pending: 2 })
   const v1 = { schema: 1, updatedAt: now, queueRunning: 0, queuePending: 0 }
   assert.deepEqual(Model.pickQueue(v1, 1, 2, now), { running: 1, pending: 2 })
+  const leftover = {
+    schema: 2, updatedAt: now, state: "idle",
+    queueRemaining: 0, queueRunning: 1, queuePending: 2
+  }
+  assert.deepEqual(Model.pickQueue(leftover, 1, 2, now), { running: 0, pending: 0 })
+  const busy = {
+    schema: 2, updatedAt: now, state: "running",
+    queueRemaining: 1, queueRunning: 1, queuePending: 0
+  }
+  assert.deepEqual(Model.pickQueue(busy, 0, 0, now), { running: 1, pending: 0 })
+})
+
+test("pickVram ignores a stale snapshot", () => {
+  const now = 1000
+  const http = { name: "cuda", used: 9, total: 10 }
+  const stale = { updatedAt: now - Model.FILE_MAX_AGE_SEC - 1, vram: { name: "old", used: 1, total: 24 } }
+  assert.deepEqual(Model.pickVram(stale, http, now), http)
+  const fresh = { updatedAt: now, vram: { name: "old", used: 1, total: 24 } }
+  assert.deepEqual(Model.pickVram(fresh, http, now), fresh.vram)
 })

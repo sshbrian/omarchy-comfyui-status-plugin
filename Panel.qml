@@ -66,8 +66,11 @@ Panel {
   }
 
   function activate() {
-    if (root.canInterrupt && host && host.interrupt) host.interrupt()
-    else if (host && host.openUi) host.openUi()
+    if (host && host.openUi) host.openUi()
+  }
+
+  function interruptFromKey() {
+    if (root.canInterrupt && root.host && root.host.interrupt) root.host.interrupt()
   }
 
   onOpenedChanged: if (opened && host && host.pingExtras) host.pingExtras()
@@ -86,14 +89,12 @@ Panel {
       id: keyCatcher
       anchors.fill: parent
       onActivateRequested: root.activate()
+      onDeleteRequested: root.interruptFromKey()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
-        if (t === "x" || t === "X" || t === "i" || t === "I") {
-          if (root.canInterrupt && root.host && root.host.interrupt) root.host.interrupt()
-        } else if (t === "o" || t === "O") {
-          if (root.host && root.host.openUi) root.host.openUi()
-        }
+        if (t === "i" || t === "I") root.interruptFromKey()
+        else if (t === "o" || t === "O") root.activate()
       }
 
       Flickable {

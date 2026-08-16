@@ -483,14 +483,18 @@ function factPills(facts) {
   return pills
 }
 
-function pickVram(file, httpVram) {
-  if (file && file.vram && asNumber(file.vram.total, 0) > 0) return file.vram
+function pickVram(file, httpVram, now) {
+  if (file && fileIsFresh(file, now) && file.vram && asNumber(file.vram.total, 0) > 0) return file.vram
   if (httpVram && asNumber(httpVram.total, 0) > 0) return httpVram
   return emptyVram()
 }
 
 function pickQueue(file, httpRunning, httpPending, now) {
-  if (file && asNumber(file.schema, 0) >= 2 && fileIsFresh(file, now)) {
+  var freshV2 = file && asNumber(file.schema, 0) >= 2 && fileIsFresh(file, now)
+  if (freshV2 && (file.state === "idle" || asNumber(file.queueRemaining, 0) <= 0)) {
+    return { running: 0, pending: 0 }
+  }
+  if (freshV2) {
     return {
       running: asNumber(file.queueRunning, 0),
       pending: asNumber(file.queuePending, 0)

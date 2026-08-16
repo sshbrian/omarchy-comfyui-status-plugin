@@ -69,7 +69,7 @@ BarWidget {
   readonly property int displayPending: displayQueue.pending
   readonly property string queueDetail: Model.formatQueue(displayRunning, displayPending, queueRemaining)
   readonly property string lastJobText: Model.formatLastJob(fileSnap ? fileSnap.lastJob : null, nowMs / 1000)
-  readonly property string vramText: Model.formatVram(Model.pickVram(fileSnap, httpVram))
+  readonly property string vramText: Model.formatVram(Model.pickVram(fileSnap, httpVram, nowMs / 1000))
   readonly property string sessionGensText: fileSnap && fileSnap.session ? String(fileSnap.session.gens) : "0"
   readonly property string sessionFailText: fileSnap && fileSnap.session ? String(fileSnap.session.failures) : "0"
   readonly property string sessionGpuText: {
