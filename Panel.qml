@@ -73,7 +73,10 @@ Panel {
     if (root.canInterrupt && root.host && root.host.interrupt) root.host.interrupt()
   }
 
-  onOpenedChanged: if (opened && host && host.pingExtras) host.pingExtras()
+  onOpenedChanged: {
+    if (opened && host && host.pingExtras) host.pingExtras()
+    if (opened) Qt.callLater(function() { spark.requestPaint() })
+  }
 
   KeyboardPanel {
     id: panel
@@ -228,6 +231,8 @@ Panel {
               onLineColorChanged: requestPaint()
               onWidthChanged: requestPaint()
               onHeightChanged: requestPaint()
+              onVisibleChanged: if (visible) requestPaint()
+              Component.onCompleted: requestPaint()
 
               onPaint: {
                 var ctx = getContext("2d")

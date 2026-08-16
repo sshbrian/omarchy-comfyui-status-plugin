@@ -213,13 +213,31 @@ function parseSystemStats(raw) {
 
 // Slow MiniMax-style samplers tick about once per 25s; expire after a few missed steps.
 var FILE_MAX_AGE_SEC = 90
+// Glue brief executing/VAE gaps so a 4-step gen does not flash Working.
+var SAMPLE_HOLD_SEC = 1.25
+// First /prompt poll is every 2s; a live file this new is trusted over a stale queue=0.
+var HTTP_BUSY_PROGRESS_AGE_SEC = 180
+
+function fileMaxAgeSec(file) {
+  var median = medianOf(file && file.stepTimes)
+  if (!(median > 0)) return FILE_MAX_AGE_SEC
+  return Math.max(FILE_MAX_AGE_SEC, median * 3 + 30)
+}
 
 function fileIsFresh(file, now, maxAgeSec) {
   var updated = asNumber(file && file.updatedAt, 0)
   if (!(updated > 0)) return false
   var age = asNumber(now, 0) - updated
-  var limit = asNumber(maxAgeSec, FILE_MAX_AGE_SEC)
+  var limit = maxAgeSec == null || maxAgeSec === undefined
+    ? fileMaxAgeSec(file)
+    : asNumber(maxAgeSec, FILE_MAX_AGE_SEC)
   return isFinite(age) && age >= 0 && age <= limit
+}
+
+function looksLikeSampler(file) {
+  if (!file || !(asNumber(file.max, 0) > 0)) return false
+  if (file.lastEvent === "progress") return true
+  return String(file.phase || "") === "sampling"
 }
 
 // httpSeen: first /prompt poll has finished.
@@ -230,17 +248,39 @@ function classify(input) {
   var src = input || {}
   if (src.httpSeen && src.httpOk !== true) return "offline"
 
-  var queue = asNumber(src.queueRemaining, 0)
-  if (src.httpSeen && queue <= 0) return "idle"
-
   var file = src.file || emptySnapshot()
-  if (!src.httpSeen && file.state !== "running") return "idle"
-
   var now = asNumber(src.now, 0)
   if (!(now > 0)) now = Date.now() / 1000
-  var fresh = fileIsFresh(file, now, src.maxAgeSec)
-  if (fresh && file.lastEvent === "progress" && asNumber(file.max, 0) > 0) return "sampling"
+
+  var queue = asNumber(src.queueRemaining, 0)
+  var httpBusy = src.httpSeen === true && queue > 0
+  var running = file.state === "running"
+  var ageLimit = src.maxAgeSec != null ? asNumber(src.maxAgeSec, FILE_MAX_AGE_SEC) : fileMaxAgeSec(file)
+  if (httpBusy && running && file.lastEvent === "progress") {
+    ageLimit = Math.max(ageLimit, HTTP_BUSY_PROGRESS_AGE_SEC)
+  }
+  var fresh = fileIsFresh(file, now, ageLimit)
+
+  // Companion idle write is newer than the 2s /prompt poll.
+  if (fresh && file.state === "idle") return "idle"
+
+  if (running && (fresh || httpBusy)) {
+    if (looksLikeSampler(file) && fresh) return "sampling"
+    return "working"
+  }
+
+  if (src.httpSeen && queue <= 0) return "idle"
+  if (!src.httpSeen && !running) return "idle"
   return "working"
+}
+
+function holdKind(kind, lastSamplingAt, now) {
+  var raw = String(kind || "idle")
+  if (raw === "idle" || raw === "offline" || raw === "sampling") return raw
+  var last = asNumber(lastSamplingAt, 0)
+  var t = asNumber(now, 0)
+  if (last > 0 && t > 0 && (t - last) <= SAMPLE_HOLD_SEC) return "sampling"
+  return raw
 }
 
 function sameSampler(prev, tick) {
@@ -551,8 +591,12 @@ if (typeof module !== "undefined") {
     parseQueueHttp: parseQueueHttp,
     parseSystemStats: parseSystemStats,
     fileIsFresh: fileIsFresh,
+    fileMaxAgeSec: fileMaxAgeSec,
     FILE_MAX_AGE_SEC: FILE_MAX_AGE_SEC,
+    SAMPLE_HOLD_SEC: SAMPLE_HOLD_SEC,
+    HTTP_BUSY_PROGRESS_AGE_SEC: HTTP_BUSY_PROGRESS_AGE_SEC,
     classify: classify,
+    holdKind: holdKind,
     nextRate: nextRate,
     formatRate: formatRate,
     formatPercent: formatPercent,
