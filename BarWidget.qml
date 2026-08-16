@@ -49,7 +49,7 @@ BarWidget {
     file: fileSnap,
     now: nowMs / 1000
   })
-  readonly property real progress: fileSnap && fileSnap.max > 0 ? Math.max(0, Math.min(1, fileSnap.value / fileSnap.max)) : 0
+  readonly property real progress: liveJob && fileSnap && fileSnap.max > 0 ? Math.max(0, Math.min(1, fileSnap.value / fileSnap.max)) : 0
   readonly property real rate: rateState && isFinite(Number(rateState.rate)) ? Number(rateState.rate) : 0
   readonly property string rateText: Model.formatRate(rate)
   readonly property string queueText: queueRemaining > 1 ? "Q:" + queueRemaining : ""
@@ -58,18 +58,19 @@ BarWidget {
   readonly property color trackColor: Style.selectedFillFor(fg, Color.accent)
   readonly property color fillColor: Color.accent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property bool canInterrupt: kind === "sampling" || kind === "working"
-  readonly property var stepTimes: fileSnap && fileSnap.stepTimes ? fileSnap.stepTimes : []
-  readonly property var pills: Model.factPills(fileSnap && fileSnap.facts)
+  readonly property bool liveJob: kind === "sampling" || kind === "working"
+  readonly property bool canInterrupt: liveJob
+  readonly property var stepTimes: liveJob && fileSnap && fileSnap.stepTimes ? fileSnap.stepTimes : []
+  readonly property var pills: liveJob ? Model.factPills(fileSnap && fileSnap.facts) : []
   readonly property string heroTitle: Model.heroTitle(kind, fileSnap, rate)
   readonly property string heroMeta: Model.heroMeta(kind, fileSnap, fileSnap ? fileSnap.session : null)
   readonly property string heroDetail: Model.heroDetail(kind, rate, queueRemaining)
-  readonly property var displayQueue: Model.pickQueue(fileSnap, httpRunning, httpPending, nowMs / 1000)
+  readonly property var displayQueue: Model.pickQueue(fileSnap, httpRunning, httpPending, nowMs / 1000, kind)
   readonly property int displayRunning: displayQueue.running
   readonly property int displayPending: displayQueue.pending
-  readonly property string queueDetail: Model.formatQueue(displayRunning, displayPending, queueRemaining)
+  readonly property string queueDetail: Model.formatQueue(displayRunning, displayPending, kind === "offline" ? 0 : queueRemaining)
   readonly property string lastJobText: Model.formatLastJob(fileSnap ? fileSnap.lastJob : null, nowMs / 1000)
-  readonly property string vramText: Model.formatVram(Model.pickVram(fileSnap, httpVram, nowMs / 1000))
+  readonly property string vramText: Model.formatVram(Model.pickVram(fileSnap, httpVram, nowMs / 1000, kind))
   readonly property string sessionGensText: fileSnap && fileSnap.session ? String(fileSnap.session.gens) : "0"
   readonly property string sessionFailText: fileSnap && fileSnap.session ? String(fileSnap.session.failures) : "0"
   readonly property string sessionGpuText: {
@@ -142,6 +143,7 @@ BarWidget {
     httpSeen = true
     if (!ok) {
       httpOk = false
+      queueRemaining = 0
       return
     }
     var parsed = Model.parsePromptHttp(raw)

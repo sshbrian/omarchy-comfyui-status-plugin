@@ -163,6 +163,8 @@ test("hero and fact helpers", () => {
   assert.equal(Model.heroMeta("sampling", file, null), "Base sampler · 4/20")
   assert.equal(Model.heroMeta("idle", file, file.session), "12 gens today")
   assert.equal(Model.heroDetail("sampling", 0.333, 1), "3.00s/it")
+  assert.equal(Model.heroDetail("offline", 0, 2), "")
+  assert.equal(Model.heroDetail("idle", 0, 2), "")
   assert.deepEqual(Model.factPills(file.facts), [
     "flux1-dev.safetensors",
     "1024×1024",
@@ -236,6 +238,7 @@ test("pickQueue prefers fresh schema 2 zeros over stale HTTP", () => {
     queueRemaining: 1, queueRunning: 1, queuePending: 0
   }
   assert.deepEqual(Model.pickQueue(busy, 0, 0, now), { running: 1, pending: 0 })
+  assert.deepEqual(Model.pickQueue(busy, 1, 2, now, "offline"), { running: 0, pending: 0 })
 })
 
 test("pickVram ignores a stale snapshot", () => {
@@ -245,4 +248,6 @@ test("pickVram ignores a stale snapshot", () => {
   assert.deepEqual(Model.pickVram(stale, http, now), http)
   const fresh = { updatedAt: now, vram: { name: "old", used: 1, total: 24 } }
   assert.deepEqual(Model.pickVram(fresh, http, now), fresh.vram)
+  assert.deepEqual(Model.pickVram(fresh, http, now, "offline"), http)
+  assert.deepEqual(Model.pickVram(fresh, Model.emptyVram(), now, "offline"), Model.emptyVram())
 })

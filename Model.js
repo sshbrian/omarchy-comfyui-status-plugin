@@ -467,6 +467,7 @@ function heroMeta(kind, file, session) {
 }
 
 function heroDetail(kind, rate, queueRemaining) {
+  if (kind === "offline" || kind === "idle") return ""
   if (kind === "sampling") return formatRate(rate)
   if (asNumber(queueRemaining, 0) > 1) return "Q:" + Math.round(queueRemaining)
   return ""
@@ -483,13 +484,18 @@ function factPills(facts) {
   return pills
 }
 
-function pickVram(file, httpVram, now) {
+function pickVram(file, httpVram, now, kind) {
+  if (kind === "offline") {
+    if (httpVram && asNumber(httpVram.total, 0) > 0) return httpVram
+    return emptyVram()
+  }
   if (file && fileIsFresh(file, now) && file.vram && asNumber(file.vram.total, 0) > 0) return file.vram
   if (httpVram && asNumber(httpVram.total, 0) > 0) return httpVram
   return emptyVram()
 }
 
-function pickQueue(file, httpRunning, httpPending, now) {
+function pickQueue(file, httpRunning, httpPending, now, kind) {
+  if (kind === "offline") return { running: 0, pending: 0 }
   var freshV2 = file && asNumber(file.schema, 0) >= 2 && fileIsFresh(file, now)
   if (freshV2 && (file.state === "idle" || asNumber(file.queueRemaining, 0) <= 0)) {
     return { running: 0, pending: 0 }
