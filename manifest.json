@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.sshbrian.comfyui-status",
   "name": "ComfyUI",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": "sshbrian",
   "license": "MIT",
-  "description": "ComfyUI generation status: idle, sampler progress, and it/s.",
+  "description": "ComfyUI generation status: idle, sampler progress, it/s, and a click-to-open dashboard.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "ComfyUI",
-    "description": "Idle, sampler progress bar, and it/s from a local ComfyUI server.",
+    "description": "Idle, sampler progress, it/s, and a click-to-open generation dashboard.",
     "category": "AI",
     "allowMultiple": false,
     "defaultSection": "right",
